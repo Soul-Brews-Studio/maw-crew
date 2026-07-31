@@ -1,0 +1,12 @@
+{
+  "name": "maw-crew-lab-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "maw plugin: crew-lab — spawn/verify/teardown codex crews",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/bun": "latest",
+    "@types/node": "latest"
+  }
+}

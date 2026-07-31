@@ -1,0 +1,28 @@
+{
+  "$schema": "https://maw.soulbrews.studio/schema/plugin.json",
+  "name": "crew-lab",
+  "version": "0.1.0",
+  "entry": "./index.ts",
+  "sdk": "^1.0.0",
+  "target": "js",
+  "tier": "extra",
+  "description": "Spawn, verify, and tear down codex crews with the traps handled once — verified pool isolation, model parity, and Nothing-is-Deleted teardown.",
+  "author": "Soul-Brews-Studio",
+  "license": "MIT",
+  "capabilities": [
+    "fs:read",
+    "fs:write",
+    "sdk:plugin"
+  ],
+  "cli": {
+    "command": "crew-lab",
+    "help": "maw crew-lab <subcommand> [args] — codex crews with verified pool isolation. Subcommands: up | verify | status | down",
+    "flags": {
+      "--pools": "string",
+      "--template": "string",
+      "--base": "string"
+    }
+  },
+  "weight": 50,
+  "schemaVersion": 1
+}
