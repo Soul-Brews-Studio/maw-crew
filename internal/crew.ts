@@ -85,6 +85,34 @@ export const poolSlots = async (): Promise<string[]> => {
 
 export const crewAuth = (lab: string, worktree: string) => md5(join(lab, worktree, ".codex/auth.json"));
 
+/**
+ * The account an auth.json belongs to, read out of the id_token.
+ *
+ * Byte equality is not the isolation test. Two pool slots can hold different
+ * token files for the SAME account (pool 1 and hermes are both
+ * codexsomkit@oraclenet.work here): the hashes differ, so a bytes-only check
+ * reports isolated while the two crews spend one quota and throttle together.
+ */
+export async function authAccount(path: string): Promise<string | null> {
+  const f = Bun.file(path);
+  if (!(await f.exists())) return null;
+  try {
+    const d = JSON.parse(await f.text());
+    for (const k of ["email", "account_id", "accountId"]) if (d[k]) return String(d[k]);
+    const tok = d?.tokens?.id_token ?? d?.id_token;
+    if (!tok) return null;
+    const raw = tok.split(".")[1];
+    const pad = raw + "=".repeat((4 - (raw.length % 4)) % 4);
+    const claims = JSON.parse(Buffer.from(pad, "base64url").toString());
+    return claims.email ?? claims.sub ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export const crewAccount = (lab: string, worktree: string) =>
+  authAccount(join(lab, worktree, ".codex/auth.json"));
+
 /** Which pool a worktree's credentials actually came from — not which it asked for. */
 export async function livePool(lab: string, worktree: string): Promise<string | null> {
   const want = await crewAuth(lab, worktree);
@@ -97,7 +125,9 @@ export async function livePool(lab: string, worktree: string): Promise<string | 
 
 export async function liveModel(session: string, window: string): Promise<string | null> {
   const out = await $`maw peek ${`${session}:${window}`}`.quiet().text().catch(() => "");
-  const hits = [...out.matchAll(/gpt-[0-9.a-z-]+ (?:xhigh|high|medium|low)/g)];
+  // The effort word is not a fixed set — omx renders "default" too, and a regex
+  // that lists only xhigh/high/medium/low reports a running engine as not booted.
+  const hits = [...out.matchAll(/gpt-[0-9.a-z-]+(?: [a-z]+)?(?= ·)/g)];
   return hits.length ? hits[hits.length - 1][0] : null;
 }
 
@@ -115,8 +145,10 @@ export async function labRoot(): Promise<string> {
   return row || die("not inside a maw-visible repository");
 }
 
+// Both extensions: maw parses either, so accepting only .yaml would be a limit
+// this tool invented rather than one the charter format imposes.
 const chartersFor = async (lab: string, prefix: string) =>
-  (await Array.fromAsync(new Bun.Glob(`ψ/teams/${prefix}*.yaml`).scan({ cwd: lab }))).sort();
+  (await Array.fromAsync(new Bun.Glob(`ψ/teams/${prefix}*.{yaml,yml}`).scan({ cwd: lab }))).sort();
 
 // ── verify ────────────────────────────────────────────────────────────
 // The point of the tool. Returns true only when every crew is individually
@@ -127,14 +159,25 @@ export async function verify(prefix: string, log = console.log): Promise<boolean
   if (!files.length) die(`no charters matching ${prefix}* in ψ/teams/`);
 
   let ok = true;
-  const auths: { who: string; hash: string }[] = [];
+  const auths: { who: string; hash: string; account: string | null }[] = [];
   const models = new Set<string>();
   const pools: string[] = [];
 
   for (const rel of files) {
     const charter = await parseCharter(join(lab, rel));
-    log(`── ${charter.name}`);
 
+    // `down` keeps the charter as a record on purpose. Without this, every
+    // teardown leaves behind something verify would fail on for ever — the
+    // Nothing-is-Deleted rule and the verifier would be fighting each other.
+    const inRegistry = await Bun.file(join(TEAM_REGISTRY, charter.name, "config.json")).exists();
+    const anyWorktree = (await Promise.all(coders(charter).map((m) => crewAuth(lab, m.worktree!))))
+      .some(Boolean);
+    if (!inRegistry && !anyWorktree) {
+      log(`── ${charter.name}  (archived record — torn down, skipped)`);
+      continue;
+    }
+
+    log(`── ${charter.name}`);
     const up = await sessionUp(charter.session);
     log(`  session   : ${up ? `UP (${charter.session})` : `DOWN (${charter.session})`}`);
     if (!up) ok = false;
@@ -161,7 +204,9 @@ export async function verify(prefix: string, log = console.log): Promise<boolean
       else log(`${label}: pool ${got} ✓ (auth matches ${POOL_ROOT}/${got})`);
 
       const hash = await crewAuth(lab, wt);
-      if (hash) auths.push({ who: basename(wt), hash });
+      const account = await crewAccount(lab, wt);
+      if (hash) auths.push({ who: basename(wt), hash, account });
+      if (account) log(`${label}: account ${account}`);
       if (got) pools.push(got);
 
       const model = up ? await liveModel(charter.session, basename(wt)) : null;
@@ -175,12 +220,19 @@ export async function verify(prefix: string, log = console.log): Promise<boolean
   // not enough — two members can each look fine yet hold the same credential.
   let clash = false;
   for (let i = 0; i < auths.length; i++)
-    for (let j = i + 1; j < auths.length; j++)
-      if (auths[i].hash === auths[j].hash) {
-        log(`auth pairwise  : ✗ ${auths[i].who} and ${auths[j].who} share credentials (md5 ${auths[i].hash.slice(0, 8)}) — trap #9`);
+    for (let j = i + 1; j < auths.length; j++) {
+      const a = auths[i], b = auths[j];
+      if (a.hash === b.hash) {
+        log(`auth pairwise  : ✗ ${a.who} and ${b.who} share credentials (md5 ${a.hash.slice(0, 8)}) — trap #9`);
+        clash = true; ok = false;
+      } else if (a.account && a.account === b.account) {
+        // different token files, one account — the hashes differ but the quota
+        // does not, so these two throttle each other under load
+        log(`auth pairwise  : ✗ ${a.who} and ${b.who} hold different tokens for the SAME account (${a.account}) — one quota, not two`);
         clash = true; ok = false;
       }
-  if (!clash) log(`auth pairwise  : ✓ no two members share credentials (${auths.length} checked)`);
+    }
+  if (!clash) log(`auth pairwise  : ✓ distinct credentials and distinct accounts (${auths.length} checked)`);
 
   log(new Set(pools).size === pools.length
     ? `pools distinct : ✓ (${pools.join(" ")})`
@@ -245,17 +297,16 @@ export async function up(
     if (await Bun.file(join(TEAM_REGISTRY, team, "config.json")).exists())
       die(`team '${team}' already in the registry — 'maw crew-lab down ${team}' first`);
 
-    const r = await $`${RENDER} --template ${template} --target ${lab} --team ${team} --session ${session} --lead-name ${basename(lab)}`.quiet().nothrow();
-    if (r.exitCode !== 0) die(`render failed for ${team}: ${r.stderr.toString().trim()}`);
+    // Pool selection belongs to render.sh (--pools), not to a sed pass here.
+    // Rewriting the rendered charter afterwards would be a second implementation
+    // of the same rule, free to drift from the one maw and render.sh agree on.
+    const r = await $`${RENDER} --template ${template} --target ${lab} --team ${team} --session ${session} --lead-name ${basename(lab)} --pools ${pool}`.quiet().nothrow();
+    if (r.exitCode !== 0) die(`render failed for ${team}: ${(r.stderr.toString() + r.stdout.toString()).trim()}`);
 
-    // trap #14 — the KEY NAME picks the pool; rewrite key, member ref, and command
-    let yaml = await Bun.file(charterPath).text();
-    yaml = yaml
-      .replace(/^ {2}omx-\d+:/m, `  omx-${pool}:`)
-      .replace(/engine: omx-\d+/g, `engine: omx-${pool}`)
-      .replace(/codex-setup\.ts \d+/g, `codex-setup.ts ${pool}`);
-    await Bun.write(charterPath, yaml);
-    if (!yaml.includes(`omx-${pool}:`)) die(`pool rewrite failed in ${team}.yaml`);
+    // trap #14 — maw reads the engine KEY, so that is what must carry the slot
+    const yaml = await Bun.file(charterPath).text();
+    if (!yaml.includes(`omx-${pool}:`))
+      die(`charter ${team}.yaml has no omx-${pool} engine key — the template may not use __ENGINEn__`);
 
     const charter = await parseCharter(charterPath);
     for (const m of coders(charter)) {
@@ -314,6 +365,38 @@ export async function down(prefix: string, log = console.log): Promise<void> {
       await $`maw team delete ${c.name}`.quiet().nothrow();
       log("  team dir removed");
     }
+
+    // Prune first: git still considers a branch checked out until the moved
+    // worktree is deregistered, and refuses to delete it. Pruning here rather
+    // than at the end is what makes the deletion below actually possible.
+    await $`maw worktree clean`.cwd(lab).quiet().nothrow();
+
+    // Branches outlive the worktree, and a tear-down that leaves them behind is
+    // how a repo accumulates `agents/*` stubs nobody dares delete. An empty
+    // branch is deleted (safe: -d refuses anything unmerged). One carrying
+    // commits is renamed under archive/ — kept, but no longer looking like
+    // work in flight.
+    for (const m of coders(c)) {
+      const br = m.branch;
+      if (!br) continue;
+      const exists = (await $`git -C ${lab} rev-parse --verify --quiet ${br}`.quiet().nothrow()).exitCode === 0;
+      if (!exists) continue;
+
+      const ahead = Number(
+        (await $`git -C ${lab} rev-list --count main..${br}`.quiet().nothrow()).stdout.toString().trim() || "0",
+      );
+      if (ahead === 0) {
+        const d = await $`git -C ${lab} branch -d ${br}`.quiet().nothrow();
+        log(d.exitCode === 0 ? `  branch deleted (no commits): ${br}` : `  branch kept (delete refused): ${br}`);
+      } else {
+        const dest = `archive/${c.name}/${basename(br)}`;
+        const r = await $`git -C ${lab} branch -m ${br} ${dest}`.quiet().nothrow();
+        log(r.exitCode === 0
+          ? `  branch archived: ${br} → ${dest} (${ahead} commit${ahead > 1 ? "s" : ""})`
+          : `  branch kept: ${br} (${ahead} commits, rename failed)`);
+      }
+    }
+
     log(`  charter kept: ${rel}`);
   }
   // `maw worktree clean` is the maw-side prune: it clears the stale gitdir
