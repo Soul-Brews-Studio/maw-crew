@@ -1,26 +1,26 @@
 import type { InvokeContext, InvokeResult } from "maw-js/plugin/types";
+import { verify, status, up, down, CrewError } from "./internal/crew";
 
 export const command = {
   name: ["crew-lab", "crew"],
   description: "Spawn, verify, and tear down codex crews with the traps handled once.",
 };
 
-const VERBS = ["up", "verify", "status", "down"];
 const USAGE = [
   "maw crew-lab <verb>",
   "",
   "  up <name> --pools 1,5 [--template T] [--base B]  render → worktrees → sessions → gates → spawn",
-  "  verify <name>   prove pool isolation + model parity from ground truth (exit 1 = do not dispatch)",
-  "  status [name]   real state from tmux (maw team status always reports idle)",
-  "  down <name>     Nothing-is-Deleted teardown",
+  "  verify <prefix>   prove pool isolation + model parity from ground truth (exit 1 = do not dispatch)",
+  "  status [prefix]   real state from tmux (maw team status always reports idle)",
+  "  down <prefix>     Nothing-is-Deleted teardown",
   "",
   "pools must be listed explicitly — slots are not contiguous.",
 ].join("\n");
 
-// The work is shell: git worktrees, tmux, maw verbs, charter yaml. Keeping it in
-// one tested script means the plugin surface and a direct ./crew-core.sh call
-// cannot drift apart.
-const CORE = new URL("./internal/crew-core.sh", import.meta.url).pathname;
+function flag(argv: string[], name: string): string | undefined {
+  const i = argv.indexOf(name);
+  return i >= 0 ? argv[i + 1] : undefined;
+}
 
 export default async function handler(ctx: InvokeContext): Promise<InvokeResult> {
   const argv: string[] =
@@ -28,45 +28,59 @@ export default async function handler(ctx: InvokeContext): Promise<InvokeResult>
       ? (ctx.args as string[])
       : ((ctx.args as Record<string, unknown>)?.argv as string[]) ?? [];
 
-  const verb = argv[0];
-  if (!verb || !VERBS.includes(verb)) {
-    return { ok: false, error: USAGE };
+  const lines: string[] = [];
+  const log = (...a: unknown[]) => {
+    const s = a.map(String).join(" ");
+    lines.push(s);
+    ctx.writer?.(s);
+  };
+  const done = (ok: boolean, error?: string): InvokeResult => {
+    const output = lines.join("\n");
+    return ok ? { ok: true, output: output || undefined } : { ok: false, error: error ?? output, output: output || undefined };
+  };
+
+  const [verb, ...rest] = argv;
+  const positional = rest.filter((a, i) => !a.startsWith("--") && !rest[i - 1]?.startsWith("--"));
+
+  try {
+    switch (verb) {
+      case "verify":
+        if (!positional[0]) return done(false, "usage: maw crew-lab verify <prefix>");
+        // exit non-zero on purpose — a failed verify must be able to gate a script
+        return done(await verify(positional[0], log));
+      case "status":
+        await status(positional[0] ?? "", log);
+        return done(true);
+      case "up": {
+        if (!positional[0]) return done(false, "usage: maw crew-lab up <name> --pools 1,5");
+        const pools = (flag(rest, "--pools") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+        await up(positional[0], { pools, template: flag(rest, "--template"), base: flag(rest, "--base") }, log);
+        return done(true);
+      }
+      case "down":
+        if (!positional[0]) return done(false, "usage: maw crew-lab down <prefix>");
+        await down(positional[0], log);
+        return done(true);
+      default:
+        return done(false, USAGE);
+    }
+  } catch (e) {
+    const msg = e instanceof CrewError ? `crew-lab: ${e.message}` : String((e as Error)?.stack ?? e);
+    return done(false, msg);
   }
-
-  const proc = Bun.spawn(["bash", CORE, ...argv], {
-    cwd: ctx.cwd ?? process.cwd(),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const [out, err, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-
-  const output = [out, err].filter((s) => s.trim()).join("\n").trimEnd();
-  if (ctx.writer && output) ctx.writer(output);
-
-  // verify exits non-zero on purpose — surface that, never swallow it
-  return code === 0
-    ? { ok: true, output: output || undefined }
-    : { ok: false, error: output || `crew-lab ${verb} exited ${code}`, output: output || undefined };
 }
 
 // maw EXECUTES this file rather than importing it, so the default export alone
-// is never called. This block is what actually runs under `maw crew-lab ...`.
+// would never run. This block is what actually serves `maw crew-lab ...`.
 if (import.meta.main) {
-  const argv = Bun.argv.slice(2);
   const res = await handler({
     source: "cli",
-    args: argv,
+    args: Bun.argv.slice(2),
     cwd: process.cwd(),
     writer: (...a: unknown[]) => console.log(...a),
   } as unknown as InvokeContext);
 
   if (!res.ok) {
-    // writer already printed captured output; only add what it did not carry
     if (res.error && res.error !== res.output) console.error(res.error);
     process.exit(1);
   }
