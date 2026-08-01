@@ -16,6 +16,7 @@
   ],
   "cli": {
     "command": "crew-lab",
+    "aliases": ["crew"],
     "help": "maw crew-lab <subcommand> [args] — codex crews with verified pool isolation. Subcommands: up | verify | status | down",
     "flags": {
       "--pools": "string",
