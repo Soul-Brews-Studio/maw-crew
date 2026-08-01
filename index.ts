@@ -76,7 +76,9 @@ if (import.meta.main) {
   const res = await handler({
     source: "cli",
     args: Bun.argv.slice(2),
-    cwd: process.cwd(),
+    // $PWD, not process.cwd(): maw executes this file from the plugin dir, so
+    // process.cwd() is the plugin repo, not where the user invoked from.
+    cwd: process.env.PWD || process.cwd(),
     writer: (...a: unknown[]) => console.log(...a),
   } as unknown as InvokeContext);
 

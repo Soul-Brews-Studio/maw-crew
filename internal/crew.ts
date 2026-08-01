@@ -139,12 +139,29 @@ export const sessionUp = async (s: string) =>
   (await $`tmux has-session -t ${s}`.quiet().nothrow()).exitCode === 0;
 
 /**
+ * The user's shell cwd — NOT `process.cwd()`.
+ *
+ * maw EXECUTES this plugin's entry file (it does not import it), so the bun
+ * process starts in the plugin's own directory: `process.cwd()` is the plugin
+ * dir, not the repo the user is standing in. maw preserves the invoking shell's
+ * directory in `$PWD`, so that is the ground truth for "where the user is".
+ *
+ * This was invisible while the plugin lived INSIDE the lead repo (a worktree ls
+ * from the plugin subdir still resolved to that repo). Splitting it out into its
+ * own repo is what exposed the bug: every cwd-relative call anchored to the
+ * plugin repo instead of the user's.
+ */
+export const userCwd = () => process.env.PWD || process.cwd();
+
+/**
  * Repo root via maw, not git: `maw worktree ls` lists the main worktree first,
  * and it works from any subdirectory. Staying on maw verbs keeps this tool and
  * maw from drifting into two different notions of the same state.
+ *
+ * Anchored to userCwd() — without it, this resolves to the plugin's own repo.
  */
 export async function labRoot(): Promise<string> {
-  const out = (await $`maw worktree ls`.quiet().nothrow()).stdout.toString();
+  const out = (await $`maw worktree ls`.cwd(userCwd()).quiet().nothrow()).stdout.toString();
   const row = out.split("\n")[1]?.split("\t")[0]?.trim();
   return row || die("not inside a maw-visible repository");
 }
