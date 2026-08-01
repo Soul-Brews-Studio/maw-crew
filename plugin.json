@@ -5,6 +5,7 @@
   "entry": "./index.ts",
   "sdk": "^1.0.0",
   "target": "js",
+  "runtime": "bun-dev",
   "tier": "extra",
   "description": "Spawn, verify, and tear down codex crews with the traps handled once — verified pool isolation, model parity, and Nothing-is-Deleted teardown.",
   "author": "Soul-Brews-Studio",
