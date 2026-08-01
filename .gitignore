@@ -2,3 +2,7 @@ node_modules/
 
 # local env (references pass, never commit)
 .envrc
+
+# oracle vault — session retros/learnings/charters are local reflections,
+# not part of the shipped plugin and not for a public repo
+ψ/
