@@ -41,6 +41,16 @@ and compares accounts pairwise, so a real shared-quota clash gets caught.
 - **codex-setup** at `~/.claude/skills/oracle-team/scripts/codex-setup.ts` — seeds a
   worktree's `.codex/auth.json` from a pool slot.
 
+## Status: fleet-internal
+
+> Two dependencies — the charter renderer (`render.sh`, from
+> [`crew-master-charters`](https://github.com/Soul-Brews-Studio/crew-master-charters))
+> and `codex-setup.ts` (from the internal `oracle-team` skill) — are **not yet
+> publicly available**. You can read the code, the protocol, and the design, and run
+> `verify` / `status` / `down` against existing crews, but you **cannot run `up`**
+> until those are published. This documents the real state honestly rather than
+> implying clone-and-run.
+
 ## Install
 
 ```sh
