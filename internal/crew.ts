@@ -24,6 +24,10 @@ $.throws(false); // we inspect exit codes ourselves
 
 export const POOL_ROOT = join(process.env.HOME!, ".codex-team");
 const TEAM_REGISTRY = join(process.env.HOME!, ".claude", "teams");
+// The charter renderer is a separate tool (crew-master-charters/scripts/render.sh)
+// that owns the template + __ENGINE/__POOL placeholders. Its path is machine-local,
+// so it MUST come from CREW_RENDER on any host but the one it was written on. The
+// fallback is only the author's checkout — a convenience, never a portable default.
 const RENDER =
   process.env.CREW_RENDER ??
   "/opt/Code/github.com/Soul-Brews-Studio/crew-master-charters/scripts/render.sh";
@@ -276,6 +280,16 @@ export async function up(
   const template = opts.template ?? "squad-solo-buddy";
   const base = opts.base ?? "main";
   if (!opts.pools.length) die("--pools is required — list the slots explicitly (they are NOT contiguous)");
+
+  // Fail here with an actionable message rather than letting the render exec
+  // below fail with a bare non-zero exit. render.sh is not part of this repo.
+  if (!(await Bun.file(RENDER).exists()))
+    die(
+      `charter renderer not found at ${RENDER}\n` +
+        `  set CREW_RENDER to your checkout of crew-master-charters/scripts/render.sh:\n` +
+        `    export CREW_RENDER=/path/to/crew-master-charters/scripts/render.sh\n` +
+        `  (${process.env.CREW_RENDER ? "CREW_RENDER is set but points at a missing file" : "CREW_RENDER is unset; using the author's default path"})`,
+    );
 
   const have = await poolSlots();
   for (const p of opts.pools) if (!have.includes(p)) die(`pool slot '${p}' does not exist (have: ${have.join(" ")})`);
