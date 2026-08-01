@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "description": "maw plugin: crew-lab — spawn/verify/teardown codex crews",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
     "typescript": "^5.0.0",
     "@types/bun": "latest",

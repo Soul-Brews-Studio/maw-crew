@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["bun", "node"]
   },
-  "include": ["index.ts", "internal", "types"]
+  "include": ["index.ts", "internal", "types", "test"]
 }

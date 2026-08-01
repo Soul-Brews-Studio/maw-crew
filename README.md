@@ -96,6 +96,20 @@ maw crew-lab down myexperiment
 `up` flags: `--pools 1,5` (required, comma-listed), `--template <name>`
 (default `squad-solo-buddy`), `--base <branch>` (default `main`).
 
+## Testing
+
+```sh
+bun test          # includes the cwd regression smoke test
+bunx tsc --noEmit  # typecheck
+```
+
+`test/cwd-smoke.test.ts` runs the **real entrypoint** (`bun index.ts status`) from
+a foreign working directory with stubbed `maw`/`tmux`, and asserts the plugin
+resolves the repo from `$PWD` — not from `process.cwd()` (which is the plugin dir,
+because maw executes the entry file). It fails on the pre-fix bug and passes after.
+Testing the plugin's functions directly would miss it — the bug lives in how the
+host sets cwd. CI (`.github/workflows/ci.yml`) runs both on every push and PR.
+
 ## Design notes
 
 Every guard in `internal/crew.ts` exists because it was hit for real. A few that
