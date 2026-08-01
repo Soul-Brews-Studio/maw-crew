@@ -328,12 +328,56 @@ export async function up(
     if ((await $`maw team up ${team} --only ${only} --dry-run`.cwd(lab).quiet().nothrow()).exitCode !== 0)
       die(`dry-run failed for ${team}`);
     const s = await $`maw team up ${team} --only ${only}`.cwd(lab).quiet().nothrow();
-    if (s.exitCode !== 0) die(`spawn failed for ${team}: ${s.stderr.toString().trim()}`);
-    log(`  spawned ${only} in ${session}`);
+    if (s.exitCode !== 0) {
+      // `maw wake` reports "engine did not start" while the engine is in fact
+      // booting — reproduced at load 26-27 and again at 40.7. Dying here aborts
+      // a team that is already half up. Ask the pane before believing the error.
+      // Poll rather than ask once. `maw wake` already waited and gave up; an
+      // engine that is merely slow will still be absent the instant afterwards.
+      // Asking immediately reproduces the very false negative this guards against
+      // — which is exactly what the first version of this code did.
+      const waitForEngines = async (deadlineMs = 60_000, stepMs = 5_000) => {
+        const started = Bun.nanoseconds();
+        const elapsed = () => (Bun.nanoseconds() - started) / 1e6;
+        let boots: { who: string; model: string | null }[] = [];
+        for (;;) {
+          boots = await Promise.all(
+            coders(charter).map(async (m) => ({
+              who: basename(m.worktree!),
+              model: await liveModel(session, basename(m.worktree!)),
+            })),
+          );
+          if (boots.every((b) => b.model) || elapsed() > deadlineMs) return boots;
+          await Bun.sleep(stepMs);
+        }
+      };
+      const boots = await waitForEngines();
+      const alive = boots.filter((b) => b.model);
+      if (alive.length === boots.length) {
+        log(`  spawn reported failure, but every pane is running an engine — false negative, continuing`);
+        for (const b of alive) log(`    ${b.who}: ${b.model}`);
+      } else {
+        const dead = boots.filter((b) => !b.model).map((b) => b.who).join(", ");
+        die(`spawn failed for ${team} — ${dead} still had no engine after 60s: ${s.stderr.toString().trim()}`);
+      }
+    } else {
+      log(`  spawned ${only} in ${session}`);
+    }
   }
 
+  // Verify runs automatically, but its result is a REPORT, not an action. A
+  // credential clash is worth shouting about; it is not worth destroying a team
+  // over, because the costs are not symmetric — a spawned team can still be torn
+  // down by hand, a team killed by mistake takes its work and its quota with it.
   log("");
-  log(`next: maw crew-lab verify ${name}   # never trust a spawn you have not verified`);
+  log("verify:");
+  const ok = await verify(name, (line) => log(`  ${line}`));
+  if (!ok) {
+    log("");
+    log(`NOT VERIFIED — the crews are up but not sound. Nothing was torn down.`);
+    log(`  inspect : maw crew-lab status ${name}`);
+    log(`  tear down: maw crew-lab down ${name}`);
+  }
 }
 
 // ── down ──────────────────────────────────────────────────────────────
