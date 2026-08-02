@@ -159,11 +159,34 @@ export const userCwd = () => process.env.PWD || process.cwd();
  * maw from drifting into two different notions of the same state.
  *
  * Anchored to userCwd() — without it, this resolves to the plugin's own repo.
+ *
+ * This is the FIRST maw call every verb makes, so it is where we separate two
+ * failures that used to collapse into one misleading message (crew-lab, d40d9a5):
+ *   (a) the wrong `maw` is first on PATH. maw-js has no `worktree` verb, so it
+ *       exits non-zero with "unknown command" on stderr and leaves stdout empty.
+ *       The repo is fine — the binary is wrong. Inferring "not in a repo" from the
+ *       empty stdout (while .nothrow() discarded the exit code) sent the reader
+ *       chasing PWD for nothing. We now check the exit code and name the binary.
+ *   (b) maw answered cleanly but the cwd really is not a maw-visible repo.
+ * Guarding here covers every verb, since they all call labRoot() before any other
+ * maw call — the same "handle the trap once" the rest of this file follows.
  */
 export async function labRoot(): Promise<string> {
-  const out = (await $`maw worktree ls`.cwd(userCwd()).quiet().nothrow()).stdout.toString();
-  const row = out.split("\n")[1]?.split("\t")[0]?.trim();
-  return row || die("not inside a maw-visible repository");
+  const r = await $`maw worktree ls`.cwd(userCwd()).quiet().nothrow();
+  const stderr = r.stderr.toString();
+
+  if (r.exitCode !== 0 || /unknown command|not a( valid)? command/i.test(stderr)) {
+    const which = Bun.which("maw") ?? "not found on PATH";
+    die(
+      `the 'maw' on PATH does not support 'worktree' (resolved: ${which}).\n` +
+        `  usually a second maw earlier on PATH (e.g. maw-js) shadowing maw-rs.\n` +
+        `  check: command -v maw  ·  ensure ~/.local/bin (maw-rs) precedes ~/.bun/bin\n` +
+        `  maw said: ${stderr.trim() || "(nothing on stderr; exit " + r.exitCode + ")"}`,
+    );
+  }
+
+  const row = r.stdout.toString().split("\n")[1]?.split("\t")[0]?.trim();
+  return row || die(`not inside a maw-visible repository (cwd: ${userCwd()})`);
 }
 
 // Both extensions: maw parses either, so accepting only .yaml would be a limit
