@@ -4,8 +4,9 @@ A [`maw`](https://maw.soulbrews.studio) plugin that spawns, **verifies**, and te
 codex coder crews — with the traps handled once, here, instead of being rediscovered
 every run.
 
-The command is `maw crew-lab` (alias `maw crew`). It exists for one reason: setup
-output describes *intent*, not what survived the spawn. `crew-lab verify` reads
+The command is `maw crew` (alias `maw crew-lab`, kept for back-compat). It exists
+for one reason: setup output describes *intent*, not what survived the spawn.
+`crew verify` reads
 **ground truth** — the actual `auth.json` bytes and the account inside each JWT — and
 refuses to say a crew is sound until pool isolation and model parity are proven.
 
@@ -58,11 +59,11 @@ git clone https://github.com/Soul-Brews-Studio/maw-crew
 cd maw-crew
 bun install
 
-# symlink into maw's plugin dir. The link name MUST be `crew-lab` — it has to
+# symlink into maw's plugin dir. The link name MUST be `crew` — it has to
 # match the command name in plugin.json, NOT the repo name (`maw-crew`).
-ln -s "$PWD" ~/.maw/plugins/crew-lab
+ln -s "$PWD" ~/.maw/plugins/crew
 
-maw plugin info crew-lab   # should list the crew-lab command
+maw plugin info crew   # should list the crew command
 ```
 
 ## Configuration
@@ -81,16 +82,16 @@ message rather than a cryptic non-zero exit from the renderer.
 
 ```sh
 # spawn 2 crews on pools 1 and 5, then auto-verify
-maw crew-lab up myexperiment --pools 1,5
+maw crew up myexperiment --pools 1,5
 
 # prove isolation before dispatching work
-maw crew-lab verify myexperiment      # exit 1 → do not dispatch
+maw crew verify myexperiment      # exit 1 → do not dispatch
 
 # real state from tmux
-maw crew-lab status myexperiment
+maw crew status myexperiment
 
 # Nothing-is-Deleted teardown
-maw crew-lab down myexperiment
+maw crew down myexperiment
 ```
 
 `up` flags: `--pools 1,5` (required, comma-listed), `--template <name>`

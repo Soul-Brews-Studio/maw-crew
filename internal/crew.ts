@@ -1,4 +1,4 @@
-// crew.ts — the work behind `maw crew-lab`.
+// crew.ts — the work behind `maw crew`.
 //
 // Wraps the crew-formation flow so its traps are handled once, here, instead of
 // being rediscovered every run. Every guard exists because it was hit for real
@@ -326,7 +326,7 @@ export async function up(
     // charters are one-shot records, and a loaded team cannot be edited (#13)
     if (await Bun.file(charterPath).exists()) die(`charter ψ/teams/${team}.yaml exists — pick another name`);
     if (await Bun.file(join(TEAM_REGISTRY, team, "config.json")).exists())
-      die(`team '${team}' already in the registry — 'maw crew-lab down ${team}' first`);
+      die(`team '${team}' already in the registry — 'maw crew down ${team}' first`);
 
     // Pool selection belongs to render.sh (--pools), not to a sed pass here.
     // Rewriting the rendered charter afterwards would be a second implementation
@@ -406,8 +406,8 @@ export async function up(
   if (!ok) {
     log("");
     log(`NOT VERIFIED — the crews are up but not sound. Nothing was torn down.`);
-    log(`  inspect : maw crew-lab status ${name}`);
-    log(`  tear down: maw crew-lab down ${name}`);
+    log(`  inspect : maw crew status ${name}`);
+    log(`  tear down: maw crew down ${name}`);
   }
 }
 

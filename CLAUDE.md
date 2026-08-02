@@ -1,14 +1,15 @@
 # maw-crew
 
-The open-source home of the **crew-lab** maw plugin — spawn, verify, and tear down
-codex coder crews with the traps handled once.
+The open-source home of the **crew** maw plugin (`maw crew`, formerly `crew-lab`) —
+spawn, verify, and tear down codex coder crews with the traps handled once.
 
 > Budded from root via `maw bud`; the plugin code was subtree-split out of
-> `plugins/crew-lab`. Parent/home oracle: **crew-lab** (`maw hey crew-lab`).
+> `plugins/crew-lab`. Parent/home oracle: **crew-lab** (`maw hey crew-lab`) — the
+> oracle keeps its name; only the command was renamed crew-lab → crew.
 
 ## What this repo is
 
-A published `maw` plugin (`maw crew-lab` / `maw crew`), not a general workspace. The
+A published `maw` plugin (`maw crew`, alias `maw crew-lab`), not a general workspace. The
 whole point is `verify`: setup output states *intent*; this tool reads **ground
 truth** (auth.json bytes + the account inside each JWT) and refuses to call a crew
 sound until pool isolation and model parity are proven.
@@ -16,7 +17,7 @@ sound until pool isolation and model parity are proven.
 - `index.ts` — maw entry (default export + `import.meta.main` so maw's *execute*, not
   import, actually runs it).
 - `internal/crew.ts` — the four verbs: `up` / `verify` / `status` / `down`.
-- `plugin.json` — command `crew-lab` (alias `crew`).
+- `plugin.json` — command `crew` (alias `crew-lab`).
 - `types/maw-js.d.ts` — type-only ambient shim for the host SDK; maw-rs injects the
   runtime, so there is no `maw-js` package dependency.
 

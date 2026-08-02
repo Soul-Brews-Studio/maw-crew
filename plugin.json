@@ -1,6 +1,6 @@
 {
   "$schema": "https://maw.soulbrews.studio/schema/plugin.json",
-  "name": "crew-lab",
+  "name": "crew",
   "version": "0.1.0",
   "entry": "./index.ts",
   "sdk": "^1.0.0",
@@ -16,9 +16,9 @@
     "sdk:plugin"
   ],
   "cli": {
-    "command": "crew-lab",
-    "aliases": ["crew"],
-    "help": "maw crew-lab <subcommand> [args] — codex crews with verified pool isolation. Subcommands: up | verify | status | down",
+    "command": "crew",
+    "aliases": ["crew-lab"],
+    "help": "maw crew <subcommand> [args] — codex crews with verified pool isolation. Subcommands: up | verify | status | down",
     "flags": {
       "--pools": "string",
       "--template": "string",
