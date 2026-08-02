@@ -174,17 +174,36 @@ export const userCwd = () => process.env.PWD || process.cwd();
 export async function labRoot(): Promise<string> {
   const r = await $`maw worktree ls`.cwd(userCwd()).quiet().nothrow();
   const stderr = r.stderr.toString();
+  const which = () => Bun.which("maw") ?? "not found on PATH";
 
-  if (r.exitCode !== 0 || /unknown command|not a( valid)? command/i.test(stderr)) {
-    const which = Bun.which("maw") ?? "not found on PATH";
+  // Branch on a DISCRIMINATING signal, never on exit code alone — maw-rs also
+  // exits non-zero when the cwd is not a repo, so `rc !== 0` cannot tell the two
+  // apart. (An earlier version branched on rc and misblamed the binary for a
+  // wrong-cwd; the test's fixture returned exit 0, which real maw-rs never does,
+  // so it passed anyway. Fixtures must mirror the real failure, not the parser.)
+
+  // (a) wrong `maw` on PATH: maw-js has no `worktree` verb → "unknown command".
+  if (/unknown command|not a( valid)? command/i.test(stderr))
     die(
-      `the 'maw' on PATH does not support 'worktree' (resolved: ${which}).\n` +
+      `the 'maw' on PATH does not support 'worktree' (resolved: ${which()}).\n` +
         `  usually a second maw earlier on PATH (e.g. maw-js) shadowing maw-rs.\n` +
         `  check: command -v maw  ·  ensure ~/.local/bin (maw-rs) precedes ~/.bun/bin\n` +
-        `  maw said: ${stderr.trim() || "(nothing on stderr; exit " + r.exitCode + ")"}`,
+        `  maw said: ${stderr.trim() || "(none)"}`,
     );
-  }
 
+  // (b) right maw, cwd is not a repo: maw-rs surfaces the git error and exits ≠0.
+  if (/not a git repository|git failed/i.test(stderr))
+    die(`not inside a maw-visible repository (cwd: ${userCwd()})`);
+
+  // (c) some other non-zero: do NOT guess a cause. Show both candidates.
+  if (r.exitCode !== 0)
+    die(
+      `\`maw worktree ls\` failed (exit ${r.exitCode}).\n` +
+        `  resolved: ${which()}  ·  cwd: ${userCwd()}\n` +
+        `  maw said: ${stderr.trim() || "(nothing on stderr)"}`,
+    );
+
+  // (d) clean exit but no main-worktree row: also not a maw-visible repo.
   const row = r.stdout.toString().split("\n")[1]?.split("\t")[0]?.trim();
   return row || die(`not inside a maw-visible repository (cwd: ${userCwd()})`);
 }
